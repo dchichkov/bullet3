@@ -61,6 +61,14 @@ typedef X11OpenGLWindow DefaultOpenGLWindow;
 #endif // BT_USE_TENSOR_RT
 
 
+#define BT_USE_RNN
+
+// #ifdef BT_USE_RNN
+#ifdef BT_USE_RNN
+#include "eglRendererRNN.cpp"
+#endif // BT_USE_RNN
+
+
 static void printGLString(const char *name, GLenum s) {
     const char *v = (const char *) glGetString(s);
   printf("%s = %s\n",name, v);

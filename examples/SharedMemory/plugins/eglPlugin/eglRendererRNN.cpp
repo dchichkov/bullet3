@@ -41,7 +41,7 @@ void cudaErrCheck_(cudaError_t stat, const char *file, int line) {
 #define cudnnErrCheck(stat) { cudnnErrCheck_((stat), __FILE__, __LINE__); }
 void cudnnErrCheck_(cudnnStatus_t stat, const char *file, int line) {
    if (stat != CUDNN_STATUS_SUCCESS) {
-      b3Error(stderr, "cuDNN Error: %s %s %d\n", cudnnGetErrorString(stat), file, line);
+      b3Error("cuDNN Error: %s %s %d\n", cudnnGetErrorString(stat), file, line);
    }
 }
 
@@ -142,16 +142,6 @@ struct EGLRendererRNN
 	size_t copyCameraImageFeatures(float *outputBuffer,
 								   size_t outputBufferSizeInBytes);
 
-
-	/** Returns tensor size, in elements.
-	*/
-	static size_t size(nvinfer1::Dims shape)
-	{
-		size_t size = shape.nbDims > 0 ? 1 : 0;
-		for (int i = 0; i < shape.nbDims; i++)
-			size *= shape.d[i];
-		return size;
-	}
 };
 
 EGLRendererRNN::EGLRendererRNN(const char *modelFileName,
@@ -333,22 +323,12 @@ EGLRendererRNN::EGLRendererRNN(const char *modelFileName,
    if (hx != NULL) initGPUData((float*)hx, numLayers * hiddenSize * miniBatch * (bidirectional ? 2 : 1), 1.f);
    if (cx != NULL) initGPUData((float*)cx, numLayers * hiddenSize * miniBatch * (bidirectional ? 2 : 1), 1.f);
 
-   initGPUData((float*)dy, seqLength * hiddenSize * miniBatch * (bidirectional ? 2 : 1), 1.f);
-   if (dhy != NULL) initGPUData((float*)dhy, numLayers * hiddenSize * miniBatch * (bidirectional ? 2 : 1), 1.f);
-   if (dcy != NULL) initGPUData((float*)dcy, numLayers * hiddenSize * miniBatch * (bidirectional ? 2 : 1), 1.f);
-
-
    // Weights
-   int numLinearLayers = 0;
-   if (RNNMode == CUDNN_RNN_RELU || RNNMode == CUDNN_RNN_TANH) {
-      numLinearLayers = 2;
-   }
-   else if (RNNMode == CUDNN_LSTM) {
-      numLinearLayers = 8;
-   }
-   else if (RNNMode == CUDNN_GRU) {
-      numLinearLayers = 6;
-   }
+   int numLinearLayers = 
+         (RNNMode == CUDNN_RNN_RELU || RNNMode == CUDNN_RNN_TANH)    ? 2 :
+         (RNNMode == CUDNN_LSTM)                                     ? 8 :
+         (RNNMode == CUDNN_GRU)                                      ? 6 : 0;
+
 
    for (int layer = 0; layer < numLayers * (bidirectional ? 2 : 1); layer++) {
       for (int linLayerID = 0; linLayerID < numLinearLayers; linLayerID++) {
@@ -459,6 +439,10 @@ EGLRendererRNN::EGLRendererRNN(const char *modelFileName,
    cudaErrCheck(cudaEventElapsedTime(&timeForward, start, stop));
 
    // Calculate FLOPS
+   numMats =   (RNNMode == CUDNN_RNN_RELU || RNNMode == CUDNN_RNN_TANH)    ?  2 :
+               (RNNMode == CUDNN_LSTM)                                     ?  8 :
+               (RNNMode == CUDNN_GRU)                                      ?  6 : 0;
+
    printf("Forward: %3.0f ms, %3.0f GFLOPS\n", timeForward, numMats * 2ull * (bidirectional ? 2 : 1) * hiddenSize * hiddenSize * seqLength * miniBatch * numLayers / (1e6 * timeForward));
 
 
@@ -615,37 +599,27 @@ EGLRendererRNN::copyCameraImageFeatures(float *outputBuffer,
 
 	// Run Inference
    // If we're not training we use this instead
-   cudnnErrCheck(cudnnRNNForwardInference(cudnnHandle,
-                                         rnnDesc,
-                                         seqLength,
-                                         xDesc,
-                                         x,
-                                         hxDesc,
-                                         hx,
-                                         cxDesc,
-                                         cx,
-                                         wDesc,
-                                         w,
-                                         yDesc,
-                                         y,
-                                         hyDesc,
-                                         hy,
-                                         cyDesc,
-                                         cy,
-                                         workspace,
-                                         workSize));
+   // cudnnErrCheck(cudnnRNNForwardInference(cudnnHandle,
+   //                                       rnnDesc,
+   //                                       seqLength,
+   //                                       xDesc,
+   //                                       x,
+   //                                       hxDesc,
+   //                                       hx,
+   //                                       cxDesc,
+   //                                       cx,
+   //                                       wDesc,
+   //                                       w,
+   //                                       yDesc,
+   //                                       y,
+   //                                       hyDesc,
+   //                                       hy,
+   //                                       cyDesc,
+   //                                       cy,
+   //                                       workspace,
+   //                                       workSize));
 
 
-
-
-
-	if (!context->execute(m_kBatchSize, &bindings[0]))
-	{
-		b3Error(
-			"Error during rendering-inferencing, failure executing RNN "
-			"engine. See RNN log, try different RNN version(?).");
-		return 0;
-	}
 
 #ifdef DEBUG_RNN_INFERENCE
 	// transfer input image back to host and save it (debug)
