@@ -11,9 +11,9 @@
 
 import pybullet as p, numpy as np
 
-p.connect(p.DIRECT, options='--width=160 --height=160 --cameraArraySize=4')
+p.connect(p.DIRECT, options='--width=160 --height=160 --cameraArraySize=16')
 
-cameraArraySize,width,height = 4,160, 160
+cameraArraySize,width,height = 16,160, 160
 viewMatrices, projectionMatrices = [], []
 for yaw in range(0,10 * cameraArraySize,10):
         viewMatrix = p.computeViewMatrixFromYawPitchRoll(cameraTargetPosition = [0,0,0], distance = 1, yaw = yaw, pitch = -10, roll = 0, upAxisIndex = 2)

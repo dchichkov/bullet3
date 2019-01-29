@@ -143,7 +143,11 @@ struct EGLRendererVisualShapeConverterInternalData
 #ifdef BT_USE_TENSOR_RT
 	EGLRendererTensorRT *m_tensorRT;
 #endif // BT_USE_TENSOR_RT
-	
+
+#ifdef BT_USE_RNN
+	EGLRendererRNN *m_RNN;
+#endif // BT_USE_RNN
+
 	EGLRendererVisualShapeConverterInternalData()
 	:m_upAxis(2),
 	m_swCameraArraySize(MAX_CAMERA_ARRAY_SIZE),
@@ -223,6 +227,13 @@ struct EGLRendererVisualShapeConverterInternalData
             m_tensorRT = new EGLRendererTensorRT("/models/squeezenet_01_160res_5x5_0.75.uff",
             						"input", outputLayers, m_swWidth, m_swHeight, m_swCameraArraySize);
 #endif // BT_USE_TENSOR_RT
+
+#ifdef BT_USE_RNN
+            // int width = (int)m_window->getRetinaScale()*m_instancingRenderer->getScreenWidth();
+            // int height = (int)m_window->getRetinaScale()*m_instancingRenderer->getScreenHeight();
+            m_RNN = new EGLRendererRNN("/models/rnn_01_160res.bin", m_swWidth, m_swHeight, m_swCameraArraySize);
+#endif // BT_USE_RNN
+
 	}
 	
 	virtual ~EGLRendererVisualShapeConverterInternalData()
@@ -230,6 +241,10 @@ struct EGLRendererVisualShapeConverterInternalData
 #ifdef BT_USE_TENSOR_RT
 		delete m_tensorRT;
 #endif // BT_USE_TENSOR_RT
+
+#ifdef BT_USE_RNN
+		delete m_RNN;
+#endif // BT_USE_RNN
 		delete m_instancingRenderer;
 		m_window->closeWindow();
 		delete m_window;

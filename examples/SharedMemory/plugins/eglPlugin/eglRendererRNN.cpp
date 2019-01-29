@@ -89,14 +89,16 @@ struct EGLRendererRNN
 	*
 	* Usage:
 	*/
-	EGLRendererRNN(const char *modelFileName, const char *modelInputLayer,
-						const char **modelOutputLayers, int width, int height,
-						int kBatchSize = 1, int kWorkspaceSize = 1 << 26);
+	EGLRendererRNN(const char *modelFileName, int width, int height,
+						int kBatchSize = 1, int kPopulation = 16, int kWorkspaceSize = 1 << 26);
 
 	~EGLRendererRNN();
 
 	int m_width, m_height;
 	int m_kBatchSize;
+
+   /// population of the evolution algorithm
+   int m_kPopulation;
 
 	/// output size in bytes (incl. batch calc.)
 	int m_totalOutputSize;
@@ -111,11 +113,38 @@ struct EGLRendererRNN
 	/// CUDA / RNN memory, used to store output layer before transferring to CPU
 	void *outputDataDevice;
 
+   // -------------------------
+   // Create cudnn context
+   // -------------------------
+   cudnnHandle_t cudnnHandle;
+
+   // -------------------------
+   // Parameters
+   // -------------------------
+   int seqLength;
+   int numLayers;
+   int hiddenSize;
+   int inputSize;
+   int miniBatch;
+   float dropout;
+   bool bidirectional;
+   int mode;
+   int persistent;
+
+
+   // -------------------------
+   // Inputs, outputs weights
+   // -------------------------
+   void *x, *hx, *cx;
+   void *y, *hy, *cy;
+   void *w;
+
 
 	// Tensor descriptors
 	btAlignedObjectArray<cudnnTensorDescriptor_t>  xDesc, yDesc;
-   	cudnnTensorDescriptor_t hxDesc, cxDesc;
-   	cudnnTensorDescriptor_t hyDesc, cyDesc;
+   cudnnTensorDescriptor_t hxDesc, cxDesc;
+   cudnnTensorDescriptor_t hyDesc, cyDesc;
+   cudnnFilterDescriptor_t wDesc;
 
 
 	// CUDA / RNN engine memory bindings, contains CUDA pointers indexed by
@@ -145,14 +174,12 @@ struct EGLRendererRNN
 };
 
 EGLRendererRNN::EGLRendererRNN(const char *modelFileName,
-											  const char *modelInputLayer,
-											  const char **modelOutputLayers,
 											  int width, int height,
-											  int kBatchSize, int kWorkspaceSize)
+											  int kBatchSize, int kPopulation, int kWorkspaceSize)
 	: m_width(width), m_height(height), m_kBatchSize(kBatchSize), m_totalOutputSize(0), m_featureLength(0),
-	  pbo(0), pboRes(0), outputDataDevice(0), engine(0), context(0), m_inputBindingIndex(0),
-	  kPopulation(16),
-	  seqLength(height / 2),  		// 80
+      pbo(0), pboRes(0), outputDataDevice(0), 
+      m_kPopulation(kPopulation),
+      seqLength(height / 2),  		// 80
       numLayers(2),
       hiddenSize(width * 3 * 2), 	// 960
       inputSize(width * 3 * 2),		// 960
@@ -160,12 +187,19 @@ EGLRendererRNN::EGLRendererRNN(const char *modelFileName,
       dropout(0),
       bidirectional(0),
       mode(0),						// RNN_RELU
-      persistent(0)
+      persistent(0),
+      x(NULL), hx(NULL), cx(NULL), y(NULL), hy(NULL), cy(NULL), w(NULL)
+      
 
 {
 
-   // Memory allocation. hx, cx, dhx, dcx, hy, cy, dhy and dcy can be NULL.
+   // -------------------------
+   // Create cudnn context
+   // -------------------------
+   cudnnErrCheck(cudnnCreate(&cudnnHandle));
 
+
+   // Memory allocation. hx, cx, dhx, dcx, hy, cy, dhy and dcy can be NULL.
    cudaErrCheck(cudaMalloc((void**)&x, seqLength * inputSize * miniBatch * sizeof(float)));
    cudaErrCheck(cudaMalloc((void**)&hx, numLayers * hiddenSize * miniBatch * (bidirectional ? 2 : 1) * sizeof(float)));
    cudaErrCheck(cudaMalloc((void**)&cx, numLayers * hiddenSize * miniBatch * (bidirectional ? 2 : 1) * sizeof(float)));
@@ -178,6 +212,9 @@ EGLRendererRNN::EGLRendererRNN(const char *modelFileName,
    xDesc.resize(seqLength);
    yDesc.resize(seqLength);
 
+
+   int dimA[3];
+   int strideA[3];
 
    // In this example dimA[1] is constant across the whole sequence
    // This isn't required, all that is required is that it does not increase.
@@ -274,13 +311,7 @@ EGLRendererRNN::EGLRendererRNN(const char *modelFileName,
    // -------------------------
    // This needs to be done after the rnn descriptor is set as otherwise
    // we don't know how many parameters we have to allocate
-   void *w;
-   void *dw;
-
-   cudnnFilterDescriptor_t wDesc, dwDesc;
-
    cudnnErrCheck(cudnnCreateFilterDescriptor(&wDesc));
-   cudnnErrCheck(cudnnCreateFilterDescriptor(&dwDesc));
 
    size_t weightsSize;
    cudnnErrCheck(cudnnGetRNNParamsSize(cudnnHandle, rnnDesc, xDesc[0], &weightsSize, CUDNN_DATA_FLOAT));
@@ -291,10 +322,7 @@ EGLRendererRNN::EGLRendererRNN(const char *modelFileName,
    dimW[2] = 1;
 
    cudnnErrCheck(cudnnSetFilterNdDescriptor(wDesc, CUDNN_DATA_FLOAT, CUDNN_TENSOR_NCHW, 3, dimW));
-   cudnnErrCheck(cudnnSetFilterNdDescriptor(dwDesc, CUDNN_DATA_FLOAT, CUDNN_TENSOR_NCHW, 3, dimW));
-
    cudaErrCheck(cudaMalloc((void**)&w,  weightsSize));
-   cudaErrCheck(cudaMalloc((void**)&dw, weightsSize));
 
 
    // -------------------------
@@ -307,9 +335,9 @@ EGLRendererRNN::EGLRendererRNN(const char *modelFileName,
    size_t reserveSize;
 
    // Need for every pass
-   cudnnErrCheck(cudnnGetRNNWorkspaceSize(cudnnHandle, rnnDesc, seqLength, xDesc, &workSize));
+   cudnnErrCheck(cudnnGetRNNWorkspaceSize(cudnnHandle, rnnDesc, seqLength, &xDesc[0], &workSize));
    // Only needed in training, shouldn't be touched between passes.
-   cudnnErrCheck(cudnnGetRNNTrainingReserveSize(cudnnHandle, rnnDesc, seqLength, xDesc, &reserveSize));
+   cudnnErrCheck(cudnnGetRNNTrainingReserveSize(cudnnHandle, rnnDesc, seqLength, &xDesc[0], &reserveSize));
 
    cudaErrCheck(cudaMalloc((void**)&workspace, workSize));
    cudaErrCheck(cudaMalloc((void**)&reserveSpace, reserveSize));
@@ -416,7 +444,7 @@ EGLRendererRNN::EGLRendererRNN(const char *modelFileName,
    cudnnErrCheck(cudnnRNNForwardInference(cudnnHandle,
                                          rnnDesc,
                                          seqLength,
-                                         xDesc,
+                                         &xDesc[0],
                                          x,
                                          hxDesc,
                                          hx,
@@ -424,7 +452,7 @@ EGLRendererRNN::EGLRendererRNN(const char *modelFileName,
                                          cx,
                                          wDesc,
                                          w,
-                                         yDesc,
+                                         &yDesc[0],
                                          y,
                                          hyDesc,
                                          hy,
@@ -439,7 +467,7 @@ EGLRendererRNN::EGLRendererRNN(const char *modelFileName,
    cudaErrCheck(cudaEventElapsedTime(&timeForward, start, stop));
 
    // Calculate FLOPS
-   numMats =   (RNNMode == CUDNN_RNN_RELU || RNNMode == CUDNN_RNN_TANH)    ?  2 :
+   float numMats =   (RNNMode == CUDNN_RNN_RELU || RNNMode == CUDNN_RNN_TANH)    ?  2 :
                (RNNMode == CUDNN_LSTM)                                     ?  8 :
                (RNNMode == CUDNN_GRU)                                      ?  6 : 0;
 
