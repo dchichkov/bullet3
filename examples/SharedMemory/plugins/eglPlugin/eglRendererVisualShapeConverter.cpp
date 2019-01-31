@@ -54,7 +54,7 @@ typedef X11OpenGLWindow DefaultOpenGLWindow;
 #include "OpenGLWindow/GLInstancingRenderer.h"
 #include "OpenGLWindow/GLRenderToTexture.h"
 
-// #define BT_USE_TENSOR_RT
+#define BT_USE_TENSOR_RT
 
 #ifdef BT_USE_TENSOR_RT
 #include "eglRendererTensorRT.cpp"
@@ -210,9 +210,9 @@ struct EGLRendererVisualShapeConverterInternalData
 #ifdef BT_USE_TENSOR_RT
             // int width = (int)m_window->getRetinaScale()*m_instancingRenderer->getScreenWidth();
             // int height = (int)m_window->getRetinaScale()*m_instancingRenderer->getScreenHeight();
-            const char *outputLayers[] = {"internal/Squeezenet/Predictions/Reshape_1", 0};
+            const char *outputLayers[] = {"Flatten/flatten/Reshape", 0};
 
-            m_tensorRT = new EGLRendererTensorRT("/models/squeezenet_01_160res_5x5_0.75.uff",
+            m_tensorRT = new EGLRendererTensorRT("/models/random_hp_01_160res.uff",
             						"input", outputLayers, m_swWidth, m_swHeight, m_swCameraArraySize);
 #endif // BT_USE_TENSOR_RT
 	}
