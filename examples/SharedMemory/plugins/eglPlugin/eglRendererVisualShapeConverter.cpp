@@ -190,8 +190,8 @@ struct EGLRendererVisualShapeConverterInternalData
 
             glGetError();//don't remove this call, it is needed for Ubuntu
             b3Assert(glGetError() ==GL_NO_ERROR);
-            int maxNumObjectCapacity = 128 * 1024;
-            int maxShapeCapacityInBytes = 128 * 1024 * 1024;
+            int maxNumObjectCapacity = 1024 * 1024;
+            int maxShapeCapacityInBytes = 1024 * 1024 * 1024;
             m_instancingRenderer = new GLInstancingRenderer(maxNumObjectCapacity, maxShapeCapacityInBytes);
 			b3Assert(glGetError() ==GL_NO_ERROR);
             m_instancingRenderer->init();
@@ -210,10 +210,16 @@ struct EGLRendererVisualShapeConverterInternalData
 #ifdef BT_USE_TENSOR_RT
             // int width = (int)m_window->getRetinaScale()*m_instancingRenderer->getScreenWidth();
             // int height = (int)m_window->getRetinaScale()*m_instancingRenderer->getScreenHeight();
-            const char *outputLayers[] = {"Flatten/flatten/Reshape", 0};
+            // const char *outputLayers[] = {"Flatten/flatten/Reshape", 0};
+			//
+            //m_tensorRT = new EGLRendererTensorRT("/models/random_hp_01_160res.uff",
+            //						"input", outputLayers, m_swWidth, m_swHeight, m_swCameraArraySize);
 
-            m_tensorRT = new EGLRendererTensorRT("/models/random_hp_01_160res.uff",
+            const char *outputLayers[] = {"internal/Squeezenet/Predictions/Reshape_1", 0};
+
+            m_tensorRT = new EGLRendererTensorRT("/models/squeezenet_01_160res_5x5_0.75.uff",
             						"input", outputLayers, m_swWidth, m_swHeight, m_swCameraArraySize);
+
 #endif // BT_USE_TENSOR_RT
 	}
 	
